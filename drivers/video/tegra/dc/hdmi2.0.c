@@ -33,6 +33,7 @@
 #include <linux/of_address.h>
 #include <linux/of_gpio.h>
 #include <soc/tegra/tegra_powergate.h>
+#include <video/tegra_dc_ext.h>
 
 #include "dc.h"
 #include "dc_reg.h"
@@ -2105,43 +2106,30 @@ static u32 tegra_hdmi_get_ex_colorimetry(struct tegra_hdmi *hdmi)
 
 static u32 tegra_hdmi_get_rgb_quant(struct tegra_hdmi *hdmi)
 {
-	/* Below code is dead until Bug 1774621 is fixed.
-	 * Hence commenting it out, to keep coverity happy
-	 */
-#if 0
 	u32 vmode = hdmi->dc->mode.vmode;
+	u32 hdmi_quant = HDMI_AVI_RGB_QUANT_DEFAULT;
 
-	if (tegra_edid_get_quant_cap(hdmi->edid) & FB_CAP_RGB_QUANT_SELECTABLE)
-		return vmode & FB_VMODE_LIMITED_RANGE ?
-			HDMI_AVI_RGB_QUANT_LIMITED : HDMI_AVI_RGB_QUANT_FULL;
-	else
-#endif
-		/*
-		 * The safest way to break the HDMI spec when forcing full range
-		 * on a limited system: send full data with the QUANT_DEFAULT
-		 * */
-		return HDMI_AVI_RGB_QUANT_DEFAULT;
+	if (tegra_edid_get_rgb_quant_cap(hdmi->edid)) {
+		if (vmode & FB_VMODE_LIMITED_RANGE)
+			hdmi_quant = HDMI_AVI_RGB_QUANT_LIMITED;
+		else
+			hdmi_quant = HDMI_AVI_RGB_QUANT_FULL;
+	}
+	return hdmi_quant;
 }
 
 static u32 tegra_hdmi_get_ycc_quant(struct tegra_hdmi *hdmi)
 {
-	/* Below code is dead until Bug 1774621 is fixed.
-	 * Hence commenting it out, to keep coverity happy
-	 */
-#if 0
-
 	u32 vmode = hdmi->dc->mode.vmode;
+	u32 hdmi_quant = HDMI_AVI_YCC_QUANT_NONE;
 
-	if (tegra_edid_get_quant_cap(hdmi->edid) & FB_CAP_YUV_QUANT_SELECTABLE)
-		return vmode & FB_VMODE_LIMITED_RANGE ?
-			HDMI_AVI_YCC_QUANT_LIMITED : HDMI_AVI_YCC_QUANT_FULL;
-	else
-#endif
-		/*
-		 * The safest way to break the HDMI spec when forcing full range
-		 * on a limited system: send full data with the QUANT_DEFAULT
-		 * */
-		return HDMI_AVI_YCC_QUANT_NONE;
+	if (tegra_edid_get_yuv_quant_cap(hdmi->edid)) {
+		if (vmode & FB_VMODE_LIMITED_RANGE)
+			hdmi_quant = HDMI_AVI_YCC_QUANT_LIMITED;
+		else
+			hdmi_quant = HDMI_AVI_YCC_QUANT_FULL;
+	}
+	return hdmi_quant;
 }
 
 static void tegra_hdmi_avi_infoframe_update(struct tegra_hdmi *hdmi)
