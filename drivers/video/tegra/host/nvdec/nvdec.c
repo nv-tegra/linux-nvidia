@@ -739,6 +739,13 @@ static int nvdec_probe(struct platform_device *dev)
 		pdata->isolate_contexts = false;
 	}
 
+	if (of_machine_is_compatible("nvidia,foster-e") ||
+	    of_machine_is_compatible("nvidia,darcy"))
+	{
+		pdata->can_powergate = false;
+		nvhost_module_enable_clk(&dev->dev);
+	}
+
 	mutex_init(&pdata->lock);
 
 	platform_set_drvdata(dev, pdata);
@@ -753,6 +760,8 @@ static int nvdec_probe(struct platform_device *dev)
 	nvhost_module_init(dev);
 
 	err = nvhost_client_device_init(dev);
+	if (err)
+		return err;
 
 	return 0;
 }
