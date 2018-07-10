@@ -3088,6 +3088,13 @@ struct tegra_dc_platform_data *of_dc_parse_platform_data(
 		pdata->fb->flags = (unsigned long)temp;
 	}
 
+	if (of_property_read_bool(np, "nvidia,50hz-ss-war")) {
+		pdata->plld2_ss_enable = true;
+		OF_DC_LOG("dc plld2 ss enabled - %d\n", pdata->plld2_ss_enable);
+	} else {
+		pdata->plld2_ss_enable = false;
+	}
+
 	if (def_out->type == TEGRA_DC_OUT_DSI) {
 		/* TODO: Add crossbar implementation for DSI */
 		def_out->dsi = devm_kzalloc(&ndev->dev,

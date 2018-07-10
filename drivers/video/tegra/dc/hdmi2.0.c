@@ -3066,6 +3066,23 @@ static long tegra_dc_hdmi_setup_clk_nvdisplay(struct tegra_dc *dc,
 	return tegra_dc_pclk_round_rate(dc, dc->mode.pclk);
 }
 
+static void tegra_dc_hdmi_configure_ss(struct tegra_dc *dc, struct clk *clk)
+{
+	struct tegra_hdmi *hdmi = tegra_dc_get_outdata(dc);
+
+	if (!dc->pdata->plld2_ss_enable)
+		return;
+
+	if (dc->mode.pclk == 148500000 &&
+		dc->mode.h_active == 1920 &&
+		dc->mode.v_active == 1080 &&
+		(tegra_hdmi_find_cea_vic(hdmi) == 31)) {
+		tegra210_plld2_configure_ss(true);
+	} else {
+		tegra210_plld2_configure_ss(false);
+	}
+}
+
 static long tegra_dc_hdmi_setup_clk_t21x(struct tegra_dc *dc, struct clk *clk)
 {
 	struct clk *parent_clk;
@@ -3101,7 +3118,9 @@ static long tegra_dc_hdmi_setup_clk_t21x(struct tegra_dc *dc, struct clk *clk)
 				return 0;
 			}
 		}
+		tegra_dc_hdmi_configure_ss(dc, clk);
 	}
+
 	if (dc->initialized)
 		goto skip_setup;
 	if (clk_get_rate(parent_clk) != dc->mode.pclk)
