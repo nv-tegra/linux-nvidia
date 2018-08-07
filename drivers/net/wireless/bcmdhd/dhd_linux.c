@@ -707,7 +707,7 @@ extern void dhd_dbg_remove(void);
 #endif /* BCMSDIO */
 
 #define OZ_ETHERTYPE 0x892e
-extern atomic_t tegra_downgrade_ac;
+atomic_t tegra_downgrade_ac = ATOMIC_INIT(0);
 
 #ifdef SDTEST
 /* Echo packet generator (pkts/s) */

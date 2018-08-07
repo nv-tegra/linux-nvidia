@@ -30,7 +30,7 @@ const char string_resume[] = "resume called";
 const char string_dpc_pkt[] = "dpc called";
 const char dummy_inf[] = "dummy:";
 int bcmdhd_irq_number;
-atomic_t tegra_downgrade_ac = ATOMIC_INIT(0);
+extern atomic_t tegra_downgrade_ac;
 
 extern int bcmdhd_resume_trigger;
 
