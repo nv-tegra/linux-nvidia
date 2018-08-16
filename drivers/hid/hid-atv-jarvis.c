@@ -57,6 +57,16 @@ MODULE_LICENSE("GPL v2");
 #define INPUT_REPORT_ID 2
 #define INPUT_EVT_INTR_DATA_ID 10
 
+#define HOST2DEVICE_REPORT_ID  0x04
+
+#ifdef CONFIG_HID_SHIELD_FF
+/* Rumble support */
+#define MAX_FF_EFFECTS              8    /* Upload up to 8 effects */
+#define RUMBLE_CMD_ID               0x39 /* a.k.a HOSTCMD_HAPTICS */
+#define RUMBLE_WRITE_PWM            0x01 /* write PWM values */
+#define RUMBLE_MAX_PWM              0x20 /* PWM:(0,32) */
+#endif /* CONFIG_HID_SHIELD_FF */
+
 #define KEYCODE_PRESENT_IN_AUDIO_PACKET_FLAG 0x80
 
 /* defaults */
@@ -1810,6 +1820,185 @@ static ssize_t atvr_store_hid_miss_war_timeout(struct device *dev,
 static DEVICE_ATTR(timeout, S_IRUGO | S_IWUSR,
 	atvr_show_hid_miss_war_timeout, atvr_store_hid_miss_war_timeout);
 
+#ifdef CONFIG_HID_SHIELD_FF
+/* Support force-feedback/rumble for Shield controllers */
+
+/* Scale u16 value between (0, RUMBLE_MAX_PWM) */
+static inline u16 scale_magnitude(u16 mag)
+{
+	u32 num = mag * RUMBLE_MAX_PWM;
+	return ((num + 0xFFFE) / 0xFFFF);
+}
+
+/* If called with value != 0: Start the rumble with given PWM.
+ * If called with value = 0: Stop the rumble with 0 PWM. */
+static int atvr_ff_playback(struct input_dev *dev, int effect_id,
+							int value)
+{
+	u8 report[TS_HOSTCMD_REPORT_SIZE] = {0};
+	struct hid_device *hdev = input_get_drvdata(dev);
+	struct ff_effect effect = dev->ff->effects[effect_id];
+	struct file *ff_file = dev->ff->effect_owners[effect_id];
+	int ret = 0;
+	u8 left = 0, right = 0;
+
+	if (ff_file == NULL) {
+		pr_err("%s: Invalid effect id (%d)\n", __func__, effect_id);
+		return -EINVAL;
+	}
+
+	if (effect.type != FF_RUMBLE)
+		return 0;
+
+	if (hdev == NULL) {
+		pr_err("%s: Failed to find valid hdev\n", __func__);
+		return -ENODEV;
+	}
+
+	/* Linearly scale magnitude to (0, RUMBLE_MAX_PWM) */
+	if (value) {
+		left = scale_magnitude(effect.u.rumble.strong_magnitude);
+		right = scale_magnitude(effect.u.rumble.weak_magnitude);
+	}
+
+	report[0] = HOST2DEVICE_REPORT_ID;
+	report[1] = RUMBLE_CMD_ID;
+	/* report[2] = TRANSACTION_ID */
+	report[3] = RUMBLE_WRITE_PWM;
+	report[4] = left;
+	report[5] = right;
+
+	ret = hid_hw_output_report(hdev, report, TS_HOSTCMD_REPORT_SIZE);
+	if (ret == -ENOSYS)
+		ret = hid_hw_raw_request(hdev, report[0], report,
+			TS_HOSTCMD_REPORT_SIZE, HID_OUTPUT_REPORT,
+			HID_REQ_SET_REPORT);
+	if (ret < 0)
+		hid_info(hdev, "failed to send ts rumble report, err=%d\n", ret);
+	else
+		ret = 0;
+
+	return ret;
+}
+
+static int atvr_ff_upload(struct input_dev *dev, struct ff_effect *effect,
+							struct ff_effect *old)
+{
+	/* Only FF_RUMBLE supported, for now. */
+	if (effect->type == FF_RUMBLE)
+		return 0;
+
+	return -ENOTSUPP;
+}
+
+/* Try to init FF on supported device/s.
+ * The FF_RUMBLE bit is set if the capability is successfully configured.
+ */
+static void atvr_init_ff(struct hid_device *hdev)
+{
+	struct hid_input *hidinput = NULL;
+	struct input_dev *inp_dev = NULL;
+	struct ff_device *ff = NULL;
+	int ret = 0;
+
+	if (hdev == NULL) {
+		hid_err(hdev, "%s: hdev is NULL\n", __func__);
+		goto err;
+	}
+
+	/* Support rumble only on Thunderstrike. */
+	if (hdev->product != USB_DEVICE_ID_NVIDIA_THUNDERSTRIKE)
+		return;
+
+	hidinput = list_first_entry_or_null(&hdev->inputs, struct hid_input, list);
+
+	if (hidinput == NULL) {
+		hid_err(hdev, "%s: hidinput is NULL\n", __func__);
+		goto err;
+	}
+
+	inp_dev = hidinput->input;
+
+	if (inp_dev == NULL) {
+		hid_err(hdev, "%s: input device is NULL\n", __func__);
+		goto err;
+	}
+
+	/* Let the world know that we can rumble. */
+	input_set_capability(inp_dev, EV_FF, FF_RUMBLE);
+
+	/* Create ff device, effect-array and mark capabilities. */
+	ret = input_ff_create(inp_dev, MAX_FF_EFFECTS);
+	if (ret) {
+		hid_err(hdev, "%s: Failed to create ff device (%d)\n",__func__, ret);
+		clear_bit(FF_RUMBLE, inp_dev->ffbit);
+		goto err;
+	}
+
+	ff = inp_dev->ff;
+	ff->upload = atvr_ff_upload;
+	ff->playback = atvr_ff_playback;
+
+	hid_info(hdev, "%s: Rumble support enabled\n", __func__);
+	return;
+
+err:
+	hid_warn(hdev, "%s: Failed to enable rumble support\n", __func__);
+	return;
+}
+
+/* Note: Use this for unwinding the FF init when an error is encountered
+ * _after_ atvr_init_ff is successfully called. Don't need to call this
+ * in atvr_remove.
+ */
+static void __maybe_unused atvr_deinit_ff(struct hid_device *hdev)
+{
+	struct hid_input *hidinput = NULL;
+	struct input_dev *inp_dev = NULL;
+
+	if (hdev == NULL) {
+		hid_err(hdev, "%s: hdev is NULL\n", __func__);
+		return;
+	}
+
+	/* Support rumble only on Thunderstrike. */
+	if (hdev->product != USB_DEVICE_ID_NVIDIA_THUNDERSTRIKE)
+		return;
+
+	hidinput = list_first_entry_or_null(&hdev->inputs, struct hid_input, list);
+
+	if (hidinput == NULL) {
+		hid_err(hdev, "%s: hidinput is NULL\n", __func__);
+		return;
+	}
+
+	inp_dev = hidinput->input;
+
+	if (inp_dev == NULL) {
+		hid_err(hdev, "%s: input device is NULL\n", __func__);
+		return;
+	}
+
+	/* Check for ff capability before chosing to destroy the ff device */
+	if (test_bit(FF_RUMBLE, inp_dev->ffbit)) {
+		clear_bit(FF_RUMBLE, inp_dev->ffbit);
+		input_ff_destroy(inp_dev);
+	}
+}
+
+#else
+
+static inline void atvr_init_ff(struct hid_device *hdev)
+{
+	return;
+}
+static inline void __maybe_unused atvr_deinit_ff(struct hid_device *hdev)
+{
+	return;
+}
+
+#endif /* CONFIG_HID_SHIELD_FF */
+
 static void atvr_snsr_probe(struct work_struct *work)
 {
 	struct shdr_device *shdr_dev =
@@ -1849,9 +2038,10 @@ static int atvr_probe(struct hid_device *hdev, const struct hid_device_id *id)
 		goto err_parse;
 	}
 
-	ret = hid_hw_start(hdev, HID_CONNECT_DEFAULT);
+	ret = hid_hw_start(hdev, HID_CONNECT_DEFAULT & ~HID_CONNECT_FF);
 	if (ret) {
 		hid_err(hdev, "hw start failed\n");
+		atvr_deinit_ff(hdev);
 		goto err_start;
 	}
 
@@ -1908,7 +2098,9 @@ static int atvr_probe(struct hid_device *hdev, const struct hid_device_id *id)
 	schedule_work(&shdr_dev->snsr_probe_work);
 
 	return 0;
+
 err_stop:
+	atvr_deinit_ff(hdev);
 	hid_hw_stop(hdev);
 	mutex_unlock(&snd_cards_lock);
 err_start:
@@ -2006,6 +2198,24 @@ static int atvr_input_mapped(struct hid_device *hdev, struct hid_input *hi,
 	return 0;
 }
 
+/* Called right before the input device is registered */
+static int atvr_input_configured(struct hid_device *hdev,
+				struct hid_input *hidinput)
+{
+	/* Try to enable FF and attach the effect callbacks.
+	 * We need to ensure that _all_ the capabilities for
+	 * the device are marked before the /dev/input/eventXX
+	 * node is registered.
+	 * Android input code probes for device capabilities
+	 * only when a /dev/input/eventXX node is _created_ and
+	 * does not update capabilities thereafter. */
+	atvr_init_ff(hdev);
+
+	/* Unwind with atvr_deinit_ff on error beyond this point */
+
+	return 0;
+}
+
 static const struct hid_device_id atvr_devices[] = {
 	{HID_BLUETOOTH_DEVICE(USB_VENDOR_ID_NVIDIA,
 			      USB_DEVICE_ID_NVIDIA_JARVIS)},
@@ -2023,6 +2233,7 @@ static struct hid_driver atvr_driver = {
 	.name = "Jarvis",
 	.id_table = atvr_devices,
 	.input_mapped = atvr_input_mapped,
+	.input_configured = atvr_input_configured,
 	.raw_event = atvr_raw_event,
 	.probe = atvr_probe,
 	.remove = atvr_remove,
