@@ -14,6 +14,14 @@ config HID_SHIELD_REMOTE
 	---help---
 	Support for NVIDIA SHIELD remote control.
 
+config HID_SHIELD_FF
+	bool "SHIELD controller force-feedback/rumble support"
+	depends on USB_HID
+	depends on HID_SHIELD_REMOTE
+	select INPUT_FF_MEMLESS
+	---help---
+	Support for NVIDIA SHIELD controller force-feedback/rumble.
+
 endmenu
 
 endmenu
