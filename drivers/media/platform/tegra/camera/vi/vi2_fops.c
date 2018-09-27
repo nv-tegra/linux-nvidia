@@ -710,7 +710,7 @@ static void tegra_channel_capture_done(struct tegra_channel *chan)
 	int state = VB2_BUF_STATE_DONE;
 
 	/* dequeue buffer and return if no buffer exists */
-	buf = dequeue_buffer(chan);
+	buf = dequeue_buffer(chan, !chan->low_latency);
 	if (!buf)
 		return;
 
@@ -824,7 +824,7 @@ static int tegra_channel_kthread_capture_start(void *data)
 		if (err)
 			continue;
 
-		buf = dequeue_buffer(chan);
+		buf = dequeue_buffer(chan, !chan->low_latency);
 		if (!buf)
 			continue;
 
@@ -947,7 +947,8 @@ error_set_stream:
 error_pipeline_start:
 #endif
 	vq->start_streaming_called = 0;
-	tegra_channel_queued_buf_done(chan, VB2_BUF_STATE_QUEUED);
+	tegra_channel_queued_buf_done(chan, VB2_BUF_STATE_QUEUED,
+		chan->low_latency);
 
 	return ret;
 }
@@ -971,7 +972,8 @@ static int vi2_channel_stop_streaming(struct vb2_queue *vq)
 			free_ring_buffers(chan, chan->num_buffers);
 		}
 		/* dequeue buffers back to app which are in capture queue */
-		tegra_channel_queued_buf_done(chan, VB2_BUF_STATE_ERROR);
+		tegra_channel_queued_buf_done(chan, VB2_BUF_STATE_ERROR,
+			chan->low_latency);
 
 		/* Disable clock gating to enable continuous clock */
 		tegra_channel_write(chan, TEGRA_VI_CFG_CG_CTRL, DISABLE);

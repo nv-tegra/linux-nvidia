@@ -523,7 +523,8 @@ void tegra_channel_ec_close(struct tegra_mc_vi *vi)
 	}
 }
 
-struct tegra_channel_buffer *dequeue_buffer(struct tegra_channel *chan)
+struct tegra_channel_buffer *dequeue_buffer(struct tegra_channel *chan,
+	bool requeue)
 {
 	struct tegra_channel_buffer *buf = NULL;
 
@@ -535,7 +536,7 @@ struct tegra_channel_buffer *dequeue_buffer(struct tegra_channel *chan)
 			 struct tegra_channel_buffer, queue);
 	list_del_init(&buf->queue);
 
-	if (!chan->low_latency) {
+	if (requeue) {
 		/* add dequeued buffer to the ring buffer */
 		add_buffer_to_ring(chan, &buf->buf);
 	}
@@ -741,9 +742,9 @@ void tegra_channel_queued_buf_done_multi_thread(
 
 /* Return all queued buffers back to videobuf2 */
 void tegra_channel_queued_buf_done(struct tegra_channel *chan,
-				enum vb2_buffer_state state)
+	enum vb2_buffer_state state, bool multi_queue)
 {
-	if (chan->low_latency)
+	if (multi_queue)
 		tegra_channel_queued_buf_done_multi_thread(chan, state);
 	else
 		tegra_channel_queued_buf_done_single_thread(chan, state);
