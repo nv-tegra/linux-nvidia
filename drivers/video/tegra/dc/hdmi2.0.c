@@ -3072,7 +3072,7 @@ static long tegra_dc_hdmi_setup_clk_t21x(struct tegra_dc *dc, struct clk *clk)
 
 	parent_clk = clk_get(NULL, "pll_d2_out0");
 
-#if defined(CONFIG_FB_MODE_PIXCLOCK_HZ)
+#if !defined(CONFIG_FB_MODE_PIXCLOCK_HZ)
 	dc->mode.pclk = tegra_hdmi_get_pclk(&dc->mode);
 #endif
 
