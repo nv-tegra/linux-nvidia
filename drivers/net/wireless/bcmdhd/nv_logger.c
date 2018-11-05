@@ -73,6 +73,9 @@ void write_log_uninit()
 {
 	pr_info("write_log_uninit\n");
 
+	if (logger_wqueue == NULL)
+		return;
+
 	flush_workqueue(logger_wqueue);
 	destroy_workqueue(logger_wqueue);
 	dhd_log_netlink_deinit();
