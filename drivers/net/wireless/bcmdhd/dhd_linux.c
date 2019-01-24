@@ -5,7 +5,7 @@
  * Copyright (C) 1999-2015, Broadcom Corporation
  *
  * Portions contributed by Nvidia
- * Copyright (C) 2015-2018, NVIDIA Corporation. All rights reserved.
+ * Copyright (C) 2015-2019, NVIDIA Corporation. All rights reserved.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -6271,10 +6271,11 @@ dhd_preinit_ioctls(dhd_pub_t *dhd)
 
 #if defined(ROAM_ENABLE) || defined(DISABLE_BUILTIN_ROAM)
 	/* Disable built-in roaming to allowed ext supplicant to take care of roaming */
-	if (builtin_roam_disabled) {
-		dhd_iovar(dhd, 0, "roam_off", (char *)&roamvar, sizeof(roamvar),
-			  NULL, 0, TRUE);
-	}
+        if (builtin_roam_disabled)
+		roamvar  = 1;
+
+	dhd_iovar(dhd, 0, "roam_off", (char *)&roamvar, sizeof(roamvar),
+		  NULL, 0, TRUE);
 #endif /* ROAM_ENABLE || DISABLE_BUILTIN_ROAM */
 #if defined(ROAM_ENABLE)
 	if (!builtin_roam_disabled) {
